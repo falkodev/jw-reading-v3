@@ -1,6 +1,10 @@
+const fs = require('fs')
 const _ = require('lodash')
+const config = require('config')
+const moment = require('moment')
 const express = require('express')
 const cheerio = require('cheerio')
+const { promisify } = require('util')
 const router = express.Router()
 
 function getHtml(url) {
@@ -31,22 +35,39 @@ async function extractItems(url, options = {}) {
   return parsed
 }
 
-router.get('/', async function(req, res, next) {
+router.get('/:lang', async function(req, res, next) {
   let reading
-  let refGlobalCache = {}
-  const domainRoot = 'https://wol.jw.org'
+  const lang = req.params.lang
+  const langPath = config.get(`${lang}.langPath`)
+  const yearWeek = moment().add(7, 'days').format('WW')
+  const writeFileAsync = promisify(fs.writeFile)
 
   try {
-    const body = await extractItems('https://wol.jw.org/wol/bc/r30/lp-f/202018443/0/0')
-    const $ = cheerio.load(body[0].content)
+    let refGlobalCache = {}
+    const domainRoot = 'https://wol.jw.org'
+    const langUrl = config.get(`${lang}.langUrl`)
+    const date = moment().add(7, 'days').format('YYYY/MM/DD')
+    const year = moment().format('YYYY')
+    const url = await extractItems(`${domainRoot}/wol/dt/${langUrl}/${date}`)
+    const $ = cheerio.load(url[1].content)
+    const readingPortion = $('header > h2 > a.b').text()
+    const readingUrl = $('header > h2 > a.b').attr('href')
+    const langPortionHeader = config.get(`${lang}.langPortionHeader`)
+    const langReadingSentence = config.get(`${lang}.langReadingSentence`)
+    const langChapter = config.get(`${lang}.langChapter`)
+    const langResearchesTitle = config.get(`${lang}.langResearchesTitle`)
+    const langPortionFooter = config.get(`${lang}.langPortionFooter`)
+    const body = await extractItems(`${domainRoot}${readingUrl}`)
+    const $1 = cheerio.load(body[0].content)
 
-    const links = $('a')
-    // for(let i = 0; i < links.length; i++) {
+    $1('p.sb').last().append(`<br><br><br><div><b>${langResearchesTitle}</b></div><br>`)
+
+    const links = $1('a')
+    // for(let linksIndex = 0; linksIndex < links.length; linksIndex++) {
     for (let linksIndex = 0; linksIndex < 4; linksIndex++) {
       const link = links.get(linksIndex)
-      // console.log('link val', require('util').inspect($(link).text(), { colors: true, depth: 1 }))
 
-      const href = `${domainRoot}${ $(link).attr('href') }`
+      const href = `${domainRoot}${ $1(link).attr('href') }`
       const references = await extractItems(href)
       let referencesText = ''
 
@@ -64,8 +85,8 @@ router.get('/', async function(req, res, next) {
               let publications
               const refLink = refLinks.get(refLinkIndex)
               const refLinkTitle = refLink.children[0].data.trim().replace(/[,;]$/, '').trim()
-              const href = `${domainRoot}${ $(refLink).attr('href') }`
-              const naturalHref = `${domainRoot}/fr${ $(refLink).attr('href') }`
+              const href = `${domainRoot}${ $2(refLink).attr('href') }`
+              const naturalHref = `${domainRoot}/${lang}${ $2(refLink).attr('href') }`
               const indexInGlobalCache = Object.keys(refGlobalCache).some(entry => entry === refLinkTitle)
               if (indexInGlobalCache) {
                 publications = refGlobalCache[refLinkTitle] 
@@ -87,14 +108,12 @@ router.get('/', async function(req, res, next) {
                 }
                 
                 if (content.length > 1000) {
-                  content = `${shorten(content, 800)} <a class="link" href=${naturalHref} target="_blank">...</a><br>`
+                  content = `${shorten(content, 800)} <a class="link" href=${naturalHref} target="_blank">...<img src="../images/external-link.svg" style="width: 16px;height: 16px;position: relative;top: 3px;left: 5px;"/></a><br>`
                 }
                 referencesText += displayRefTitle
-                  ? `<br><b>${refLink.children[0].data}</b>&nbsp;<a class="link" href=${naturalHref} target="_blank">External</a><br>${content}`
+                  ? `<br><b>${refLinkTitle}</b>&nbsp;<a class="link" href=${naturalHref} target="_blank">jw.org<img src="../images/external-link.svg" style="width: 16px;height: 16px;position: relative;top: 3px;left: 5px;"/></a><br>${content}`
                   : `${content}`
               })
-              //TODO: ajouter node-config
-              //TODO: icone pour lien externe
             }
           }
         }
@@ -108,31 +127,46 @@ router.get('/', async function(req, res, next) {
 
       const $3 = cheerio.load(referencesText)
       $3('a').not('.link').each(function () {
-        $(this).attr('href', '')
-        const span = $(`<span>${ $(this).html() }</span>`)
-        $(this).replaceWith(span)
+        $3(this).attr('href', '')
+        const span = $3(`<span>${ $3(this).html() }</span>`)
+        $3(this).replaceWith(span)
       })
 
-      const text = $(link).text()
-      const classes = $(link).attr('class')
-      $(link).replaceWith(`<a href="#${linksIndex}" id="link${linksIndex}" class="${classes}">${text}</a>`)
-      $('body').append(`
+      const text = $1(link).text()
+      const classes = $1(link).attr('class')
+      $1(link).replaceWith(`<a href="#${linksIndex}" id="link${linksIndex}" class="${classes}">${text}</a>`)
+      $1('body').append(`
         <p>
-          <b></b><a href="#link${linksIndex}" id="${linksIndex}">${classes.includes('cl') ? 'Chapitre '+text : text}</a></b>
+          <b></b><a href="#link${linksIndex}" id="${linksIndex}">${classes.includes('cl') ? langChapter+' '+text : text}</a></b>
           <br>${ $3.html() }
         </p>
       `)
     }
-    $('body').attr('style', 'color:#505D6E;font-family:Helvetica, Arial, sans-serif;font-weight:normal;font-size:16px;')
-    $('body').prepend('<p style="background:#505D6E;padding:20px;padding-bottom:30px;color:#FFFFFF;"><a href="http://www.jwreading.com" style="color: #FFFFFF;text-decoration:none"><img src="http://www.jwreading.com/assets/images/book.png" style="width: 32px; height: 32px;"/>&nbsp;&nbsp;&nbsp;&nbsp;JW Reading</a></p>')
-    $('.cl').each((index, chapterVerse) => {
-      const text = $(chapterVerse).text()
-      $(chapterVerse).text(`Chapitre ${text}`)
+
+    $1('body').attr('style', 'color:#505D6E;font-family:Helvetica, Arial, sans-serif;font-weight:normal;font-size:16px;')
+    $1('body').prepend(`<br><p></p><b><span id="weeklyPortion">${langReadingSentence}&nbsp;${readingPortion}.</span></b></p><br>`)
+    $1('body').prepend(`<p style="background:#505D6E;padding:20px;padding-bottom:30px;color:#FFFFFF;"><a href="http://www.jwreading.com" style="color: #FFFFFF;text-decoration:none"><img src="http://www.jwreading.com/assets/images/book.png" style="width: 32px; height: 32px;position: relative; top: 10px; left: 3px;"/>&nbsp;&nbsp;&nbsp;&nbsp;JW Reading - ${langPortionHeader}</a></p>`)
+
+    // add "Chapter" to each verse 1 of chapters
+    $1('.cl').each((index, chapterVerse) => {
+      const text = $1(chapterVerse).text()
+      $1(chapterVerse).text(`${langChapter} ${text}`)
     })
-    reading = $.html()
+
+    const newBody = $1('body').clone()
+    const header = $1('body').children().first()
+    $1(newBody).children().first().remove()
+    $1('body').empty()
+    $1('body').append(header)
+    $1('body').append('<div class="dailyrun"></div>')
+    $1('.dailyrun').append(newBody)
+    $1('body').append(`<br><p style="background:#505D6E;padding:10px;color:#FFFFFF;"><br><a href="http://www.jwreading.com/login" style="color: #FFFFFF">${langPortionFooter}</a><br><br>JW Reading - ${year}</p>`)
+    reading = $1.html()
+    await writeFileAsync(`portions/${langPath}/${yearWeek}dbr11.html`, reading)
   } catch (error) {
     reading = `Error in reading cut: ${error}`
   }
+
   res.send(reading)
 })
 
