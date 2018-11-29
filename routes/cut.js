@@ -40,7 +40,7 @@ router.get('/', async function(req, res, next) {
       const link = links.get(linksIndex)
       // console.log('link val', require('util').inspect($(link).text(), { colors: true, depth: 1 }))
 
-      const href = `${domainRoot}${$(link).attr('href')}`
+      const href = `${domainRoot}${ $(link).attr('href') }`
       const references = await extractItems(href)
       let referencesText = ''
 
@@ -49,17 +49,29 @@ router.get('/', async function(req, res, next) {
 
         if (researchRefs) {
           for (let researchRefIndex = 0; researchRefIndex < researchRefs.length; researchRefIndex++) {
+            let refCache = {}
             const researchRef = researchRefs[researchRefIndex]
             const $2 = cheerio.load(researchRef.content)
             const refLinks = $2('a:not([class])') // select only researches, remove the reference to the verse originating the research
+
             for (let refLinkIndex = 0; refLinkIndex < refLinks.length; refLinkIndex++) {
               const refLink = refLinks.get(refLinkIndex)
-              const href = `${domainRoot}${$(refLink).attr('href')}`
+              const href = `${domainRoot}${ $(refLink).attr('href') }`
               const publications = await extractItems(href)
-              publications && publications.forEach(publication => referencesText += `<br><b>${refLink.children[0].data}</b><br>${publication.content}`)
-              //TODO: mettre ss une seule entrée les différentes parties d'une reference (ex: Questions des lecteurs à la suite d'un article)
+              publications && publications.forEach(publication => {
+                let displayRefTitle = true
+                const indexInCache = Object.keys(refCache).some(entry => entry === refLink.children[0].data)
+                if (indexInCache) {
+                  refCache[indexInCache] += publication.content
+                  displayRefTitle = false
+                } else {
+                  refCache[refLink.children[0].data] = publication.content
+                }
+                console.log(' displayRefTitle =====>', displayRefTitle)
+                referencesText += displayRefTitle ? `<br><b>${refLink.children[0].data}</b><br>` : ''
+                referencesText += publication.content
+              })
               //TODO: mettre en cache recherches déjà faites et les réutiliser à l'affichage
-              //TODO: formater texte et enlever liens présents ds les recherches
             }
           }
         }
@@ -74,9 +86,9 @@ router.get('/', async function(req, res, next) {
       const $3 = cheerio.load(referencesText)
       $3('a').each(function () {
         $(this).attr('href', '')
-        console.log('linkToDisable', require('util').inspect($(this).attr('href'), { colors: true, depth: 1 }))
+        const span = $(`<span>${ $(this).html() }</span>`)
+        $(this).replaceWith(span)
       })
-      // console.log('referencesText', require('util').inspect(referencesText, { colors: true, depth: 1 }))
 
       const text = $(link).text()
       const classes = $(link).attr('class')
@@ -84,7 +96,7 @@ router.get('/', async function(req, res, next) {
       $('body').append(`
         <p>
           <b></b><a href="#link${linksIndex}" id="${linksIndex}">${classes.includes('cl') ? 'Chapitre '+text : text}</a></b>
-          <br>${$3.html()}
+          <br>${ $3.html() }
         </p>
       `)
     }
