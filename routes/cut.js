@@ -19,6 +19,11 @@ function getHtml(url) {
   })
 }
 
+function shorten(str, maxLen, separator = ' ') {
+  if (str.length <= maxLen) return str;
+  return str.substr(0, str.lastIndexOf(separator, maxLen));
+}
+
 async function extractItems(url, options = {}) {
   const htmlContent = await getHtml(url)
   const parsed = JSON.parse(htmlContent)
@@ -28,6 +33,7 @@ async function extractItems(url, options = {}) {
 
 router.get('/', async function(req, res, next) {
   let reading
+  let refGlobalCache = {}
   const domainRoot = 'https://wol.jw.org'
 
   try {
@@ -49,29 +55,46 @@ router.get('/', async function(req, res, next) {
 
         if (researchRefs) {
           for (let researchRefIndex = 0; researchRefIndex < researchRefs.length; researchRefIndex++) {
-            let refCache = {}
             const researchRef = researchRefs[researchRefIndex]
             const $2 = cheerio.load(researchRef.content)
             const refLinks = $2('a:not([class])') // select only researches, remove the reference to the verse originating the research
 
             for (let refLinkIndex = 0; refLinkIndex < refLinks.length; refLinkIndex++) {
+              let refVerseCache = {}
+              let publications
               const refLink = refLinks.get(refLinkIndex)
+              const refLinkTitle = refLink.children[0].data.trim().replace(/[,;]$/, '').trim()
               const href = `${domainRoot}${ $(refLink).attr('href') }`
-              const publications = await extractItems(href)
+              const naturalHref = `${domainRoot}/fr${ $(refLink).attr('href') }`
+              const indexInGlobalCache = Object.keys(refGlobalCache).some(entry => entry === refLinkTitle)
+              if (indexInGlobalCache) {
+                publications = refGlobalCache[refLinkTitle] 
+              } else {
+                publications = await extractItems(href)
+                refGlobalCache[refLinkTitle] = publications
+              }
+
               publications && publications.forEach(publication => {
                 let displayRefTitle = true
-                const indexInCache = Object.keys(refCache).some(entry => entry === refLink.children[0].data)
-                if (indexInCache) {
-                  refCache[indexInCache] += publication.content
+                let content = publication.content
+                const indexInVerseCache = Object.keys(refVerseCache).some(entry => entry === refLinkTitle)
+
+                if (indexInVerseCache) {
+                  refVerseCache[refLinkTitle] += content
                   displayRefTitle = false
                 } else {
-                  refCache[refLink.children[0].data] = publication.content
+                  refVerseCache[refLinkTitle] = content
                 }
-                console.log(' displayRefTitle =====>', displayRefTitle)
-                referencesText += displayRefTitle ? `<br><b>${refLink.children[0].data}</b><br>` : ''
-                referencesText += publication.content
+                
+                if (content.length > 1000) {
+                  content = `${shorten(content, 800)} <a class="link" href=${naturalHref} target="_blank">...</a><br>`
+                }
+                referencesText += displayRefTitle
+                  ? `<br><b>${refLink.children[0].data}</b>&nbsp;<a class="link" href=${naturalHref} target="_blank">External</a><br>${content}`
+                  : `${content}`
               })
-              //TODO: mettre en cache recherches déjà faites et les réutiliser à l'affichage
+              //TODO: ajouter node-config
+              //TODO: icone pour lien externe
             }
           }
         }
@@ -84,7 +107,7 @@ router.get('/', async function(req, res, next) {
       }
 
       const $3 = cheerio.load(referencesText)
-      $3('a').each(function () {
+      $3('a').not('.link').each(function () {
         $(this).attr('href', '')
         const span = $(`<span>${ $(this).html() }</span>`)
         $(this).replaceWith(span)
