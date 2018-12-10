@@ -36,6 +36,9 @@ async function extractItems(url, options = {}) {
 }
 
 router.get('/:lang', async function(req, res, next) {
+  req.setTimeout(5 * 60 * 1000);
+  res.setTimeout(5 * 60 * 1000);
+
   let reading
   const lang = req.params.lang
   const langPath = config.get(`${lang}.langPath`)
@@ -56,15 +59,16 @@ router.get('/:lang', async function(req, res, next) {
     const langReadingSentence = config.get(`${lang}.langReadingSentence`)
     const langChapter = config.get(`${lang}.langChapter`)
     const langResearchesTitle = config.get(`${lang}.langResearchesTitle`)
-    const langPortionFooter = config.get(`${lang}.langPortionFooter`)
+    // const langResearchLink = config.get(`${lang}.langResearchLink`)
     const body = await extractItems(`${domainRoot}${readingUrl}`)
     const $1 = cheerio.load(body[0].content)
 
-    $1('p.sb').last().append(`<br><br><br><div><b>${langResearchesTitle}</b></div><br>`)
+    $1('p.sb').last().append(`<br><br><br><div class="research-title"><b>${langResearchesTitle}</b></div><br>`)
 
     const links = $1('a')
-    // for(let linksIndex = 0; linksIndex < links.length; linksIndex++) {
-    for (let linksIndex = 0; linksIndex < 4; linksIndex++) {
+    for (let linksIndex = 0; linksIndex < links.length; linksIndex++) {
+    // for (let linksIndex = 0; linksIndex < 4; linksIndex++) {
+      console.log('progress:', require('util').inspect(`${(linksIndex + 1)} / ${links.length}`, { colors: true, depth: 0 }))
       const link = links.get(linksIndex)
 
       const href = `${domainRoot}${ $1(link).attr('href') }`
@@ -106,12 +110,13 @@ router.get('/:lang', async function(req, res, next) {
                 } else {
                   refVerseCache[refLinkTitle] = content
                 }
-                
+                //TODO: changer icone en blanc
+                //TODO: formater texte
                 if (content.length > 1000) {
-                  content = `${shorten(content, 800)} <a class="link" href=${naturalHref} target="_blank">...<img src="../images/external-link.svg" style="width: 16px;height: 16px;position: relative;top: 3px;left: 5px;"/></a><br>`
+                  content = `${shorten(content, 800)} <a class="link" href=${naturalHref} target="_blank">...<img src="../images/external-link.svg" style="width: 16px;height: 16px;position: relative;top: -1px;left: 5px;"/></a><br>`
                 }
                 referencesText += displayRefTitle
-                  ? `<br><b>${refLinkTitle}</b>&nbsp;<a class="link" href=${naturalHref} target="_blank">jw.org<img src="../images/external-link.svg" style="width: 16px;height: 16px;position: relative;top: 3px;left: 5px;"/></a><br>${content}`
+                  ? `<br><b>${refLinkTitle}</b>&nbsp;<a class="link" href=${naturalHref} target="_blank">jw.org<img src="../images/external-link.svg" style="width: 16px;height: 16px;position: relative;top: -1px;left: 5px;"/></a><br>${content}`
                   : `${content}`
               })
             }
@@ -119,7 +124,7 @@ router.get('/:lang', async function(req, res, next) {
         }
 
         if (versesRefs) {
-          versesRefs.forEach(verseRef => referencesText += `<br><b>${verseRef.title}</b><br>${verseRef.content}`)
+          versesRefs.forEach(verseRef => referencesText += `<br><b>${verseRef.title}</b><br>${verseRef.content.replace(/ class="v"/gm, '')}`)
         }
       } else { // `references` is an object containing a note
         referencesText = `<br><b>${references.title}</b><br>${references.content}`
@@ -127,17 +132,29 @@ router.get('/:lang', async function(req, res, next) {
 
       const $3 = cheerio.load(referencesText)
       $3('a').not('.link').each(function () {
+        // remove link to other verses in researches
         $3(this).attr('href', '')
         const span = $3(`<span>${ $3(this).html() }</span>`)
         $3(this).replaceWith(span)
       })
+      $3('h1').attr('style', 'font-size: 16px')
+      $3('h2').attr('style', 'font-size: 16px')
+      $3('h3').attr('style', 'font-size: 16px')
+
+      // pictures in research
+      const src = $3('figure').children('img').data('img-small-src')
+      if (src) {
+        $3('figure').children('img').attr('src', `${domainRoot}${src}`)
+        $3('figure').children('img').attr('style', 'width: unset; height: unset;')
+        $3('figure').attr('style', 'margin-inline-start: 5px;')
+      }
 
       const text = $1(link).text()
       const classes = $1(link).attr('class')
       $1(link).replaceWith(`<a href="#${linksIndex}" id="link${linksIndex}" class="${classes}">${text}</a>`)
       $1('body').append(`
         <p>
-          <b></b><a href="#link${linksIndex}" id="${linksIndex}">${classes.includes('cl') ? langChapter+' '+text : text}</a></b>
+          <b></b><a href="#link${linksIndex}" id="${linksIndex}" class="research">${classes.includes('cl') ? langChapter+' '+text : text}</a></b>
           <br>${ $3.html() }
         </p>
       `)
@@ -160,9 +177,9 @@ router.get('/:lang', async function(req, res, next) {
     $1('body').append(header)
     $1('body').append('<div class="dailyrun"></div>')
     $1('.dailyrun').append(newBody)
-    $1('body').append(`<br><p style="background:#505D6E;padding:10px;color:#FFFFFF;"><br><a href="http://www.jwreading.com/login" style="color: #FFFFFF">${langPortionFooter}</a><br><br>JW Reading - ${year}</p>`)
+    // $1('body').append(`<br><p style="background:#505D6E;padding:10px;color:#FFFFFF;"><br><a href="http://www.jwreading.com/login" style="color: #FFFFFF">${langPortionFooter}</a><br><br>JW Reading - ${year}</p>`)
     reading = $1.html()
-    await writeFileAsync(`portions/${langPath}/${yearWeek}dbr11.html`, reading)
+    await writeFileAsync(`public/portions/${langPath}/${yearWeek}dbr11.html`, reading)
   } catch (error) {
     reading = `Error in reading cut: ${error}`
   }
