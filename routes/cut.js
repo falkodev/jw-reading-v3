@@ -46,28 +46,31 @@ router.get('/:lang', async function(req, res, next) {
   const writeFileAsync = promisify(fs.writeFile)
 
   try {
+    let contents = ''
     let refGlobalCache = {}
     const domainRoot = 'https://wol.jw.org'
     const langUrl = config.get(`${lang}.langUrl`)
     const date = moment().add(7, 'days').format('YYYY/MM/DD')
-    const year = moment().format('YYYY')
     const url = await extractItems(`${domainRoot}/wol/dt/${langUrl}/${date}`)
     const $ = cheerio.load(url[1].content)
     const readingPortion = $('header > h2 > a.b').text()
-    const readingUrl = $('header > h2 > a.b').attr('href')
     const langPortionHeader = config.get(`${lang}.langPortionHeader`)
     const langReadingSentence = config.get(`${lang}.langReadingSentence`)
     const langChapter = config.get(`${lang}.langChapter`)
     const langResearchesTitle = config.get(`${lang}.langResearchesTitle`)
-    // const langResearchLink = config.get(`${lang}.langResearchLink`)
-    const body = await extractItems(`${domainRoot}${readingUrl}`)
-    const $1 = cheerio.load(body[0].content)
+    const readingUrls = $('header > h2 > a.b')
+    for (let i = 0; i < readingUrls.length; i++) {
+      const readingUrl = $(readingUrls[i]).attr('href')
+      const body = await extractItems(`${domainRoot}${readingUrl}`)
+      contents += body[0].content
+    }
+    const $1 = cheerio.load(contents)
 
     $1('p.sb').last().append(`<br><br><br><div class="research-title"><b>${langResearchesTitle}</b></div><br>`)
 
     const links = $1('a')
     for (let linksIndex = 0; linksIndex < links.length; linksIndex++) {
-    // for (let linksIndex = 0; linksIndex < 4; linksIndex++) {
+    // for (let linksIndex = 0; linksIndex < 1; linksIndex++) {
       console.log('progress:', require('util').inspect(`${(linksIndex + 1)} / ${links.length}`, { colors: true, depth: 0 }))
       const link = links.get(linksIndex)
 
@@ -88,7 +91,7 @@ router.get('/:lang', async function(req, res, next) {
               let refVerseCache = {}
               let publications
               const refLink = refLinks.get(refLinkIndex)
-              const refLinkTitle = refLink.children[0].data.trim().replace(/[,;]$/, '').trim()
+              const refLinkTitle = refLink.children[0].data
               const href = `${domainRoot}${ $2(refLink).attr('href') }`
               const naturalHref = `${domainRoot}/${lang}${ $2(refLink).attr('href') }`
               const indexInGlobalCache = Object.keys(refGlobalCache).some(entry => entry === refLinkTitle)
@@ -113,10 +116,10 @@ router.get('/:lang', async function(req, res, next) {
                 //TODO: changer icone en blanc
                 //TODO: formater texte
                 if (content.length > 1000) {
-                  content = `${shorten(content, 800)} <a class="link" href=${naturalHref} target="_blank">...<img src="../images/external-link.svg" style="width: 16px;height: 16px;position: relative;top: -1px;left: 5px;"/></a><br>`
+                  content = `${shorten(content, 800)} <a class="link" href=${naturalHref} target="_blank">...<img src="http://jwreading.com/img/external-link.png" style="width: 16px;height: 16px;position: relative;top: -1px;left: 5px;"/></a><br>`
                 }
                 referencesText += displayRefTitle
-                  ? `<br><b>${refLinkTitle}</b>&nbsp;<a class="link" href=${naturalHref} target="_blank">jw.org<img src="../images/external-link.svg" style="width: 16px;height: 16px;position: relative;top: -1px;left: 5px;"/></a><br>${content}`
+                  ? `<br><b>${refLinkTitle}</b>&nbsp;<a class="link" href=${naturalHref} target="_blank">jw.org<img src="http://jwreading.com/img/external-link.png" style="width: 16px;height: 16px;position: relative;top: -1px;left: 5px;"/></a><br>${content}`
                   : `${content}`
               })
             }
@@ -177,7 +180,6 @@ router.get('/:lang', async function(req, res, next) {
     $1('body').append(header)
     $1('body').append('<div class="dailyrun"></div>')
     $1('.dailyrun').append(newBody)
-    // $1('body').append(`<br><p style="background:#505D6E;padding:10px;color:#FFFFFF;"><br><a href="http://www.jwreading.com/login" style="color: #FFFFFF">${langPortionFooter}</a><br><br>JW Reading - ${year}</p>`)
     reading = $1.html()
     await writeFileAsync(`public/portions/${langPath}/${yearWeek}dbr11.html`, reading)
   } catch (error) {
