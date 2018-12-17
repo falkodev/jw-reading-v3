@@ -91,7 +91,7 @@ router.get('/:lang', async function(req, res, next) {
               let refVerseCache = {}
               let publications
               const refLink = refLinks.get(refLinkIndex)
-              const refLinkTitle = refLink.children[0].data
+              const refLinkTitle = refLink.children[0].data.trim().replace(/[,;]$/, '').trim()
               const href = `${domainRoot}${ $2(refLink).attr('href') }`
               const naturalHref = `${domainRoot}/${lang}${ $2(refLink).attr('href') }`
               const indexInGlobalCache = Object.keys(refGlobalCache).some(entry => entry === refLinkTitle)
