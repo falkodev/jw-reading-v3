@@ -12,6 +12,7 @@
     "cookie-parser": "~1.4.3",
     "debug": "~2.6.9",
     "express": "~4.16.0",
+    "ftp": "^0.3.10",
     "husky": "^1.2.0",
     "lint-staged": "^8.1.0",
     "lodash": "^4.17.11",
